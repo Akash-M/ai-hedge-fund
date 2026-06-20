@@ -112,6 +112,10 @@ class Settings:
     # --- decision engine ---
     llm_model: str = "gpt-4.1-mini"
     llm_provider: str = "OpenAI"
+    # Ordered "Provider:model" fallbacks tried on rate-limit/quota errors.
+    # Empty => auto-build from providers whose API keys are present.
+    llm_fallbacks: str = ""
+    llm_cooldown_s: int = 90           # bench a provider this long after it 429s
     lookback_months: int = 6           # price history window for vol/correlation
     selected_analysts: List[str] = field(default_factory=list)  # [] => all analysts
 
@@ -187,6 +191,8 @@ class Settings:
 
             llm_model=os.getenv("AIHF_LLM_MODEL", "gpt-4.1-mini").strip(),
             llm_provider=os.getenv("AIHF_LLM_PROVIDER", "OpenAI").strip(),
+            llm_fallbacks=os.getenv("AIHF_LLM_FALLBACKS", "").strip(),
+            llm_cooldown_s=_get_int("AIHF_LLM_COOLDOWN_S", 90),
             lookback_months=_get_int("AIHF_LOOKBACK_MONTHS", 6),
             selected_analysts=_get_list("AIHF_ANALYSTS", []),
 

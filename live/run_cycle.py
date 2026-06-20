@@ -32,6 +32,7 @@ from live.risk_guardrails import build_execution_plan
 from live.executor import execute_plan
 from live.state_store import record_cycle
 from live.notifier import notify, format_summary
+from live import llm_failover
 
 logger = logging.getLogger("run_cycle")
 
@@ -77,6 +78,14 @@ def get_decisions_and_prices(
     start_date, end_date = _date_window(settings.lookback_months)
     logger.info("Running hedge fund engine %s..%s on %d tickers (model=%s/%s)",
                 start_date, end_date, len(universe), settings.llm_provider, settings.llm_model)
+
+    # Install multi-provider LLM failover BEFORE importing the agents — they bind
+    # call_llm at import time, so the patch must precede `import src.main`.
+    from live.llm_failover import install_llm_failover
+    chain = install_llm_failover(settings)
+    if chain:
+        logger.info("LLM failover chain (in order): %s", chain)
+
     from src.main import run_hedge_fund  # heavy import (langchain/langgraph)
 
     result = run_hedge_fund(
@@ -160,6 +169,9 @@ def run_once(settings: Settings) -> Dict[str, Any]:
                         "open_positions": len(account.get("positions", []))},
             "universe": universe,
             "resolved_instruments": symbol_to_iid,
+            "llm_chain": llm_failover.build_chain(
+                (settings.llm_provider, settings.llm_model),
+                os.getenv("AIHF_LLM_FALLBACKS", "")),
             "decisions": decisions,
             "plan_notes": plan.notes,
             "results": results,

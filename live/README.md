@@ -50,6 +50,23 @@ instead of double-trading.
 - **Live gate**: real-money trading requires BOTH `ETORO_ENVIRONMENT=real`,
   `AIHF_DRY_RUN=false`, AND `AIHF_CONFIRM_LIVE=I_UNDERSTAND`.
 
+## Multi-provider LLM failover
+
+19 agents per ticker hits OpenAI rate limits fast. `live/llm_failover.py` wraps the
+app's single `call_llm` chokepoint with an ordered **provider chain** and fails over
+on 429 / quota / overloaded errors — installed by monkeypatch *before* the agents
+import, so no `src/` file is edited (keeps `main` syncable).
+
+- Set keys for any providers you have; the chain auto-builds from what's present.
+- **Best free fallbacks:** **Groq** (genuine free tier, high rate limits, fast) and
+  **Gemini** (free tier). Anthropic works but is pay-as-you-go (no perpetual free tier).
+- After a provider 429s it's benched for `AIHF_LLM_COOLDOWN_S` (default 90s) so the
+  next agents skip straight to a healthy provider instead of re-hitting the limit.
+- Override the order explicitly with `AIHF_LLM_FALLBACKS`, e.g.
+  `OpenAI:gpt-4.1-mini,Groq:llama-3.3-70b-versatile,Google:gemini-2.5-flash`.
+
+Each cycle log records the active `llm_chain`. Tested in `tests/test_llm_failover.py`.
+
 ## Prerequisites
 
 1. **eToro API keys** — generate at <https://www.etoro.com/settings/trade>
