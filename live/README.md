@@ -119,6 +119,21 @@ docker run --rm --env-file .env -v "$PWD/live_state:/app/live_state" ai-hedge-fu
 # then add a crontab entry, e.g.:  30 19 * * 1-5  docker run --rm ...
 ```
 
+## Run history & progress tracking
+
+Each cycle writes to the state dir (`AIHF_STATE_DIR=runs` in CI):
+- `runs/run-<timestamp>.json` — one committed log file per run
+- `runs/cycles.jsonl` — consolidated append-only history
+- `runs/latest.json` — most recent cycle snapshot
+- `runs/index.html` — self-contained equity-curve + trade-log report, regenerated each run
+
+On GitHub Actions each run **commits the new `runs/` files back to the branch**, so the
+repo itself is the durable, versioned history — no database, no separate branch. Open
+`runs/index.html` locally or serve it via GitHub Pages for an at-a-glance view.
+Your **eToro app stays the authoritative portfolio view**; this adds the equity trend
+over time plus the agent's per-trade reasoning. Regenerate locally with
+`python -m live.report_html --state-dir runs`.
+
 ## Demo → live checklist
 
 - [ ] Dry-run cycles produce sane orders & sizes in the logs.

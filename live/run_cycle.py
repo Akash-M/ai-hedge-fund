@@ -178,6 +178,13 @@ def run_once(settings: Settings) -> Dict[str, Any]:
         }
         record_cycle(settings, cycle)
         notify(settings, cycle)
+        try:
+            from live.report_html import write_report
+            report_path = write_report(settings.state_dir)
+            if report_path:
+                logger.info("Progress report written to %s", report_path)
+        except Exception as e:  # a report failure must never break trading
+            logger.warning("Report generation failed: %s", e)
         return cycle
     finally:
         client.close()
