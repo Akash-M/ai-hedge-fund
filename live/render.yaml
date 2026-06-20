@@ -1,0 +1,43 @@
+# Render.com Cron Job (alternative to GitHub Actions). Cheap + managed.
+# Create -> Blueprint -> point at this file. Set secrets in the dashboard.
+# Docs: https://render.com/docs/cronjobs
+services:
+  - type: cron
+    name: ai-hedge-fund-trader
+    runtime: docker
+    dockerfilePath: ./live/Dockerfile
+    dockerContext: .
+    plan: starter            # cron jobs are billed only for run time
+    schedule: "30 19 * * 1-5"  # weekdays ~1h before US close (UTC); adjust
+    envVars:
+      - key: ETORO_ENVIRONMENT
+        value: demo
+      - key: AIHF_DRY_RUN
+        value: "true"          # flip to "false" only after demo validation
+      - key: AIHF_RISK_PROFILE
+        value: aggressive
+      - key: AIHF_BUDGET_USD
+        value: "1000"
+      - key: AIHF_LLM_MODEL
+        value: gpt-4.1-mini
+      - key: AIHF_LLM_PROVIDER
+        value: OpenAI
+      - key: AIHF_TICKERS
+        value: NVDA,MSFT,AAPL,GOOGL,AMZN,META,TSLA,AMD,AVGO,CRM,NFLX,QQQ
+      # Secrets — set values in the Render dashboard (sync:false keeps them out of git):
+      - key: ETORO_API_KEY
+        sync: false
+      - key: ETORO_USER_KEY
+        sync: false
+      - key: FINANCIAL_DATASETS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AIHF_NOTIFY_WEBHOOK
+        sync: false
+      - key: AIHF_CONFIRM_LIVE
+        sync: false
+    disk:
+      name: live-state
+      mountPath: /app/live_state
+      sizeGB: 1
