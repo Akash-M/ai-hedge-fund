@@ -1,0 +1,77 @@
+name: AI Hedge Fund — Trading Cycle
+
+# Simplest + cheapest host: GitHub Actions. Runs on a schedule for FREE, secrets
+# live in repo Settings -> Secrets and variables -> Actions. Defaults to DRY-RUN.
+# Flip to live only via a manual run with mode=live (and the real-money secrets set).
+
+on:
+  schedule:
+    # ~19:30 UTC on weekdays (about 1h before US close in summer). Adjust to taste.
+    - cron: "30 19 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (safe) or live (places orders)"
+        type: choice
+        options: ["dry-run", "live"]
+        default: "dry-run"
+
+concurrency:
+  group: ai-hedge-fund-trading
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry config virtualenvs.create false
+          poetry install --only main --no-interaction --no-ansi
+
+      - name: Restore state (best-effort)
+        uses: actions/download-artifact@v4
+        with:
+          name: live-state
+          path: live_state
+        continue-on-error: true
+
+      - name: Run trading cycle
+        env:
+          # --- secrets (Settings -> Secrets and variables -> Actions) ---
+          ETORO_API_KEY: ${{ secrets.ETORO_API_KEY }}
+          ETORO_USER_KEY: ${{ secrets.ETORO_USER_KEY }}
+          ETORO_ENVIRONMENT: ${{ secrets.ETORO_ENVIRONMENT || 'demo' }}
+          FINANCIAL_DATASETS_API_KEY: ${{ secrets.FINANCIAL_DATASETS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AIHF_NOTIFY_WEBHOOK: ${{ secrets.AIHF_NOTIFY_WEBHOOK }}
+          AIHF_CONFIRM_LIVE: ${{ secrets.AIHF_CONFIRM_LIVE }}
+          # --- config (repo variables or inline) ---
+          AIHF_LLM_MODEL: ${{ vars.AIHF_LLM_MODEL || 'gpt-4.1-mini' }}
+          AIHF_LLM_PROVIDER: ${{ vars.AIHF_LLM_PROVIDER || 'OpenAI' }}
+          AIHF_BUDGET_USD: ${{ vars.AIHF_BUDGET_USD || '1000' }}
+          AIHF_TICKERS: ${{ vars.AIHF_TICKERS || 'NVDA,MSFT,AAPL,GOOGL,AMZN,META,TSLA,AMD,AVGO,CRM,NFLX,QQQ' }}
+          AIHF_RISK_PROFILE: aggressive
+          AIHF_STATE_DIR: live_state
+          # DRY-RUN unless this is a manual 'live' run.
+          AIHF_DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live') && 'false' || 'true' }}
+        run: |
+          python -m live.run_cycle --print
+
+      - name: Save state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-state
+          path: live_state
+          retention-days: 90
+          overwrite: true
