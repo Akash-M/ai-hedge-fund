@@ -209,7 +209,20 @@ def main(argv: List[str] | None = None) -> int:
         settings.dry_run = True
 
     logger.info("Settings: %s", json.dumps(settings.redacted(), default=str))
-    cycle = run_once(settings)
+    try:
+        cycle = run_once(settings)
+    except Exception as e:
+        # Leave a committed trace for genuine failures (won't capture hard timeouts,
+        # which SIGTERM the process, but does capture bad keys / API errors / bugs).
+        logger.exception("Trading cycle failed")
+        try:
+            import traceback
+            record_cycle(settings, {"error": str(e),
+                                    "traceback": traceback.format_exc()[:4000],
+                                    "results": []})
+        except Exception:
+            pass
+        raise
     if args.do_print:
         print("\n" + format_summary(cycle))
     return 0
