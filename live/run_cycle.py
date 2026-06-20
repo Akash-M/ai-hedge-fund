@@ -165,6 +165,7 @@ def run_once(settings: Settings) -> Dict[str, Any]:
             "budget": budget,
             "cash_for_buys": cash_for_buys,
             "account": {"cash": account.get("cash"), "equity": account.get("equity"),
+                        "credit": account.get("credit"), "unrealized_pnl": account.get("unrealized_pnl"),
                         "currency": account.get("currency"),
                         "open_positions": len(account.get("positions", []))},
             "universe": universe,

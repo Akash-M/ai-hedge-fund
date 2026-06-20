@@ -122,38 +122,57 @@ class EToroClient:
         raise EToroAPIError(f"Exhausted retries on {method} {url}: {last_err}")
 
     # ----- path helpers -----
+    # Info endpoints use an explicit env segment (/demo or /real).
+    # Execution endpoints: demo has a /demo segment; real omits it.
     def _info_base(self) -> str:
-        seg = self.s.env_segment
-        return f"{V1}/trading/info/{seg}".rstrip("/") if seg else f"{V1}/trading/info"
+        return f"{V1}/trading/info/{'real' if self.s.is_real else 'demo'}"
 
-    def _exec_base(self) -> str:
-        seg = self.s.env_segment
-        return f"{V2}/trading/execution/{seg}".rstrip("/") if seg else f"{V2}/trading/execution"
+    def _exec_base_v2(self) -> str:
+        return f"{V2}/trading/execution" + ("" if self.s.is_real else "/demo")
+
+    def _exec_base_v1(self) -> str:
+        return f"{V1}/trading/execution" + ("" if self.s.is_real else "/demo")
 
     # ----- market data -----
     def search_instrument(self, symbol: str) -> Optional[int]:
-        """Resolve a ticker symbol -> eToro instrumentId (cached)."""
+        """Resolve a ticker symbol -> eToro instrumentId (cached).
+
+        Primary: GET /api/v1/instruments/{symbol}. Fallback: the search endpoint
+        filtered by internalSymbolFull (the precise filter per eToro docs).
+        """
         symbol = symbol.upper().strip()
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
-        data = self._request("GET", f"{V1}/market-data/search", params={"search": symbol})
-        items = _first(data, "data", "instruments", "results", default=[]) or []
-        if isinstance(items, dict):
-            items = items.get("items", []) or [items]
-        # Prefer an exact symbol/ticker match.
-        chosen = None
-        for it in items:
-            sym = str(_first(it, "symbolFull", "symbol", "ticker", "name", default="")).upper()
-            if sym == symbol:
-                chosen = it
-                break
-        if chosen is None and items:
-            chosen = items[0]
-        if chosen is None:
-            logger.warning("No instrument found for %s", symbol)
-            return None
-        iid = _first(chosen, "instrumentId", "InstrumentID", "instrumentID", "id")
+
+        iid = None
+        try:
+            data = self._request("GET", f"{V1}/instruments/{symbol}",
+                                  params={"fields": "instrumentId,symbol"})
+            payload = _first(data, "data", "instrument", default=data)
+            iid = _first(payload, "instrumentId", "InstrumentID", "instrumentID", "id")
+        except EToroAPIError as e:
+            logger.warning("instruments/%s lookup failed (%s); trying search", symbol, e)
+
         if iid is None:
+            data = self._request("GET", f"{V1}/market-data/search",
+                                  params={"internalSymbolFull": symbol,
+                                          "fields": "instrumentId,internalSymbolFull,symbol"})
+            items = _first(data, "data", "instruments", "results", default=[]) or []
+            if isinstance(items, dict):
+                items = items.get("items", []) or [items]
+            chosen = None
+            for it in items:
+                sym = str(_first(it, "internalSymbolFull", "symbolFull", "symbol", "ticker",
+                                  default="")).upper()
+                if sym == symbol:
+                    chosen = it
+                    break
+            if chosen is None and items:
+                chosen = items[0]
+            iid = _first(chosen or {}, "instrumentId", "InstrumentID", "instrumentID", "id")
+
+        if iid is None:
+            logger.warning("No instrument found for %s", symbol)
             return None
         iid = int(iid)
         self._instrument_cache[symbol] = iid
@@ -192,46 +211,60 @@ class EToroClient:
 
     # ----- account -----
     def get_portfolio(self) -> Dict[str, Any]:
-        """Return the live portfolio. Doubles as the credential/health check.
+        """Return the live account via GET /trading/info/{env}/pnl.
+
+        eToro wraps the payload in `clientPortfolio` with `credit` (cash),
+        `positions[]`, `orders`, `ordersForOpen`, `mirrors`, and `unrealizedPnL`.
+        Doubles as the credential/health check.
 
         Normalized shape:
-          {
-            "cash": float,                # available buying power
-            "equity": float,              # total account value if available
+          { "cash": float, "equity": float, "credit": float, "unrealized_pnl": float,
             "currency": str,
-            "positions": [
-                {"instrument_id": int, "position_id": str, "is_buy": bool,
-                 "units": float, "amount": float, "open_rate": float, "pnl": float}
-            ],
-            "raw": <original payload>
-          }
+            "positions": [{instrument_id, position_id, is_buy, units, amount, open_rate, pnl}],
+            "raw": <clientPortfolio> | None }
         """
-        data = self._request("GET", f"{self._info_base()}/portfolio")
-        payload = _first(data, "data", default=data)
+        data = self._request("GET", f"{self._info_base()}/pnl")
+        cp = _first(data, "clientPortfolio", "data", default=data) or {}
+        if os.getenv("AIHF_DEBUG_API"):
+            logger.warning("eToro /pnl clientPortfolio keys: %s",
+                           list(cp.keys()) if isinstance(cp, dict) else type(cp).__name__)
 
-        cash = _first(payload, "availableBuyingPower", "buyingPower", "cash",
-                      "availableAmount", "credit", default=0.0)
-        equity = _first(payload, "equity", "totalValue", "netAssetValue", default=cash)
-        currency = _first(payload, "currency", "currencyCode", default=self.s.base_currency.upper())
+        credit = _safe_float(_first(cp, "credit", "availableBuyingPower", "cash", default=0.0))
+        unrealized = _safe_float(_first(cp, "unrealizedPnL", "unrealizedPnl", default=0.0))
+        currency = _first(cp, "currency", "currencyCode", default=self.s.base_currency.upper())
 
-        raw_positions = _first(payload, "positions", "openPositions", default=[]) or []
         positions: List[Dict[str, Any]] = []
-        for p in raw_positions:
+        invested = 0.0
+        for p in (_first(cp, "positions", "openPositions", default=[]) or []):
+            amt = _safe_float(_first(p, "amount", "investedAmount", "Amount"))
+            invested += amt
             positions.append({
                 "instrument_id": _safe_int(_first(p, "instrumentId", "InstrumentID", "instrumentID")),
-                "position_id": _first(p, "positionId", "PositionID", "id"),
+                "position_id": _first(p, "positionId", "positionID", "PositionID", "id"),
                 "is_buy": bool(_first(p, "isBuy", "IsBuy", default=True)),
-                "units": _safe_float(_first(p, "units", "Units", "amountInUnits")),
-                "amount": _safe_float(_first(p, "amount", "Amount", "investedAmount")),
+                "units": _safe_float(_first(p, "units", "Units")),
+                "amount": amt,
                 "open_rate": _safe_float(_first(p, "openRate", "OpenRate", "rate")),
-                "pnl": _safe_float(_first(p, "netProfit", "profit", "pnl", "unrealizedPnl")),
+                "pnl": _safe_float(_first(p, "pnL", "pnl", "netProfit", "unrealizedPnL")),
             })
+
+        # Available cash = credit minus capital committed to pending open orders.
+        pending = 0.0
+        for o in (_first(cp, "ordersForOpen", default=[]) or []):
+            pending += _safe_float(_first(o, "amount", "Amount"))
+        for o in (_first(cp, "orders", default=[]) or []):
+            pending += _safe_float(_first(o, "amount", "Amount"))
+        cash = max(0.0, credit - pending)
+        equity = cash + invested + unrealized
+
         return {
-            "cash": _safe_float(cash),
-            "equity": _safe_float(equity),
+            "cash": cash,
+            "equity": equity,
+            "credit": credit,
+            "unrealized_pnl": unrealized,
             "currency": currency,
             "positions": positions,
-            "raw": payload,
+            "raw": cp if os.getenv("AIHF_DEBUG_API") else None,
         }
 
     # ----- execution -----
@@ -258,16 +291,20 @@ class EToroClient:
         if self.s.dry_run:
             logger.info("[DRY-RUN] would POST open order: %s", body)
             return {"dry_run": True, "request": body}
-        return self._request("POST", f"{self._exec_base()}/orders", body=body)
+        return self._request("POST", f"{self._exec_base_v2()}/orders", body=body)
 
     def close_position(self, position_id: Any, instrument_id: Optional[int] = None) -> Dict[str, Any]:
-        body = {"action": "close", "positionId": position_id}
-        if instrument_id is not None:
-            body["instrumentId"] = instrument_id
+        """Full close of a position. eToro: POST .../market-close-orders/positions/{id}
+        with {InstrumentID, UnitsToDeduct: null} (null => close the whole position)."""
+        body: Dict[str, Any] = {"InstrumentID": instrument_id, "UnitsToDeduct": None}
         if self.s.dry_run:
-            logger.info("[DRY-RUN] would POST close order: %s", body)
-            return {"dry_run": True, "request": body}
-        return self._request("POST", f"{self._exec_base()}/orders", body=body)
+            logger.info("[DRY-RUN] would close position %s (instrument %s)", position_id, instrument_id)
+            return {"dry_run": True, "request": {"positionId": position_id, **body}}
+        return self._request(
+            "POST",
+            f"{self._exec_base_v1()}/market-close-orders/positions/{position_id}",
+            body=body,
+        )
 
     # ----- instrument cache persistence -----
     def _load_cache(self) -> None:
