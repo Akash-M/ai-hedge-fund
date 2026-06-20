@@ -20,6 +20,9 @@ concurrency:
   group: ai-hedge-fund-trading
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   trade:
     runs-on: ubuntu-latest
@@ -38,13 +41,7 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --only main --no-interaction --no-ansi
 
-      - name: Restore state (best-effort)
-        uses: actions/download-artifact@v4
-        with:
-          name: live-state
-          path: live_state
-        continue-on-error: true
-
+      
       - name: Run trading cycle
         env:
           # --- secrets (Settings -> Secrets and variables -> Actions) ---
@@ -64,17 +61,21 @@ jobs:
           AIHF_BUDGET_USD: ${{ vars.AIHF_BUDGET_USD || '1000' }}
           AIHF_TICKERS: ${{ vars.AIHF_TICKERS || 'NVDA,MSFT,AAPL,GOOGL,AMZN,META,TSLA,AMD,AVGO,CRM,NFLX,QQQ' }}
           AIHF_RISK_PROFILE: aggressive
-          AIHF_STATE_DIR: live_state
+          AIHF_STATE_DIR: runs
           # DRY-RUN unless this is a manual 'live' run.
           AIHF_DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'live') && 'false' || 'true' }}
         run: |
           python -m live.run_cycle --print
 
-      - name: Save state
+      - name: Commit run logs to runs/
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: live-state
-          path: live_state
-          retention-days: 90
-          overwrite: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runs
+          if git diff --cached --quiet; then
+            echo "No new run logs to commit."
+          else
+            git commit -m "chore(runs): trading cycle $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]"
+            git push
+          fi
