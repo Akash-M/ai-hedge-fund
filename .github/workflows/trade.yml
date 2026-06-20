@@ -52,12 +52,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          # --- config (repo variables or inline) ---
           AIHF_LLM_FALLBACKS: ${{ vars.AIHF_LLM_FALLBACKS }}
           AIHF_NOTIFY_WEBHOOK: ${{ secrets.AIHF_NOTIFY_WEBHOOK }}
           AIHF_CONFIRM_LIVE: ${{ secrets.AIHF_CONFIRM_LIVE }}
-          # --- config (repo variables or inline) ---
-          AIHF_LLM_MODEL: ${{ vars.AIHF_LLM_MODEL || 'gpt-4.1-mini' }}
-          AIHF_LLM_PROVIDER: ${{ vars.AIHF_LLM_PROVIDER || 'OpenAI' }}
+          AIHF_LLM_MODEL: ${{ vars.AIHF_LLM_MODEL || 'llama-3.3-70b-versatile' }}
+          AIHF_LLM_PROVIDER: ${{ vars.AIHF_LLM_PROVIDER || 'Groq' }}
+          AIHF_ANALYSTS: ${{ vars.AIHF_ANALYSTS || 'valuation_analyst,fundamentals_analyst,technical_analyst,cathie_wood,warren_buffett' }}
           AIHF_BUDGET_USD: ${{ vars.AIHF_BUDGET_USD || '1000' }}
           AIHF_TICKERS: ${{ vars.AIHF_TICKERS || 'NVDA,MSFT,AAPL,GOOGL,AMZN,META,TSLA,AMD,AVGO,CRM,NFLX,QQQ' }}
           AIHF_RISK_PROFILE: aggressive
@@ -70,11 +71,12 @@ jobs:
       - name: Commit run logs to runs/
         if: always()
         run: |
+          mkdir -p runs            # ensure the path exists even if the cycle was canceled
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runs
+          git add runs || true
           if git diff --cached --quiet; then
-            echo "No new run logs to commit."
+            echo "No run logs to commit (cycle may have been canceled or produced no new files)."
           else
             git commit -m "chore(runs): trading cycle $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]"
             git push
