@@ -40,11 +40,12 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
-def _get_list(name: str, default: List[str]) -> List[str]:
+def _get_list(name: str, default: List[str], upper: bool = True) -> List[str]:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
         return list(default)
-    return [item.strip().upper() for item in raw.split(",") if item.strip()]
+    items = [item.strip() for item in raw.split(",") if item.strip()]
+    return [i.upper() for i in items] if upper else items
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +195,8 @@ class Settings:
             llm_fallbacks=os.getenv("AIHF_LLM_FALLBACKS", "").strip(),
             llm_cooldown_s=_get_int("AIHF_LLM_COOLDOWN_S", 90),
             lookback_months=_get_int("AIHF_LOOKBACK_MONTHS", 6),
-            selected_analysts=_get_list("AIHF_ANALYSTS", []),
+            # Analyst keys are lowercase (e.g. "cathie_wood"); don't uppercase them.
+            selected_analysts=[a.lower() for a in _get_list("AIHF_ANALYSTS", [], upper=False)],
 
             dry_run=_get_bool("AIHF_DRY_RUN", True),
             state_dir=os.getenv("AIHF_STATE_DIR", "./live_state").strip(),
