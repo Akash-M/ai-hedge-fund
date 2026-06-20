@@ -1,0 +1,116 @@
+{
+  "environment": "demo",
+  "dry_run": true,
+  "budget": 1000.0,
+  "cash_for_buys": 0.0,
+  "account": {
+    "cash": 0.0,
+    "equity": 0.0,
+    "currency": "USD",
+    "open_positions": 0
+  },
+  "universe": [
+    "NVDA",
+    "MSFT",
+    "AAPL",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "AMD",
+    "AVGO",
+    "CRM",
+    "NFLX",
+    "QQQ"
+  ],
+  "resolved_instruments": {},
+  "llm_chain": [
+    [
+      "Groq",
+      "llama-3.3-70b-versatile"
+    ],
+    [
+      "Google",
+      "gemini-2.5-flash"
+    ]
+  ],
+  "decisions": {
+    "NVDA": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "MSFT": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "AAPL": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "GOOGL": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "AMZN": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "META": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "TSLA": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "AMD": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "AVGO": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "CRM": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "NFLX": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    },
+    "QQQ": {
+      "action": "hold",
+      "quantity": 0,
+      "confidence": 100,
+      "reasoning": "No valid trade available"
+    }
+  },
+  "plan_notes": [
+    "budget=$1,000 per_position_cap=$250 max_invested=$1,000 cash_avail=$0"
+  ],
+  "results": [],
+  "timestamp": "2026-06-20T02:08:06.477916+00:00"
+}
